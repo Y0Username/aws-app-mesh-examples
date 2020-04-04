@@ -1,0 +1,25 @@
+{
+	"spec": {
+		"listeners": [{
+			"portMapping": {
+				"port": 9080,
+				"protocol": "http"
+			}
+		}],
+		"backendDefaults": {
+			"clientPolicy": {
+				"tls": {
+					"validation": {
+						"trust": {
+							"acm": {
+								"certificateAuthorityArns": [
+									$ROOT_CA_ARN
+								]
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+}

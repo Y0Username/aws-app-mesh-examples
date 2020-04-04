@@ -1,0 +1,308 @@
+---
+Parameters:
+  EnvironmentName:
+    Type: String
+    Description: Environment name that joins all the stacks
+
+  AppMeshMeshName:
+    Type: String
+    Description: Name of mesh
+
+  ECSServicesDomain:
+    Type: String
+    Description: DNS namespace used by services e.g. default.svc.cluster.local
+
+  EnvoyImage:
+    Type: String
+    Description: The image to use for the Envoy container
+
+  GrpcColorClientImage:
+    Type: String
+    Description: Color client grpc app container image
+
+  GrpcColorServerImage:
+    Type: String
+    Description: Color server grpc app container image
+
+  AppMeshXdsEndpoint:
+    Description: AppMesh xds endpoint
+    Type: String
+
+Resources:
+
+  ### grpc-color-client.default.svc.cluster.local
+  GrpcColorClientServiceDiscoveryRecord:
+    Type: AWS::ServiceDiscovery::Service
+    Properties:
+      Name: 'grpc-color-client'
+      DnsConfig:
+        NamespaceId:
+          'Fn::ImportValue': !Sub "${EnvironmentName}:ECSServiceDiscoveryNamespace"
+        DnsRecords:
+        - Type: A
+          TTL: 300
+      HealthCheckCustomConfig:
+        FailureThreshold: 1
+
+  GrpcColorClientTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      RequiresCompatibilities:
+      - 'FARGATE'
+      Family: 'grpc-color-client'
+      NetworkMode: 'awsvpc'
+      Cpu: 256
+      Memory: 512
+      TaskRoleArn:
+        'Fn::ImportValue': !Sub "${EnvironmentName}:TaskIamRoleArn"
+      ExecutionRoleArn:
+        'Fn::ImportValue': !Sub "${EnvironmentName}:TaskExecutionIamRoleArn"
+      ContainerDefinitions:
+      - Name: 'app'
+        Image: !Ref GrpcColorClientImage
+        Essential: true
+        LogConfiguration:
+          LogDriver: 'awslogs'
+          Options:
+            awslogs-group:
+                Fn::ImportValue: !Sub "${EnvironmentName}:ECSServiceLogGroup"
+            awslogs-region: !Ref AWS::Region
+            awslogs-stream-prefix: 'grpc-color-client'
+        PortMappings:
+        - ContainerPort: 9080
+          Protocol: 'tcp'
+        Environment:
+        - Name: 'PORT'
+          Value: '9080'
+        - Name: 'COLOR_HOST'
+          Value: !Sub 'grpc-color-gateway.${ECSServicesDomain}:9080'
+
+  GrpcColorClientService:
+    Type: AWS::ECS::Service
+    DependsOn:
+    - GrpcColorServerService
+    Properties:
+      Cluster:
+        'Fn::ImportValue': !Sub "${EnvironmentName}:ECSCluster"
+      DeploymentConfiguration:
+        MaximumPercent: 200
+        MinimumHealthyPercent: 100
+      DesiredCount: 1
+      LaunchType: 'FARGATE'
+      ServiceRegistries:
+      - RegistryArn: !GetAtt 'GrpcColorClientServiceDiscoveryRecord.Arn'
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: DISABLED
+          SecurityGroups:
+          - 'Fn::ImportValue': !Sub "${EnvironmentName}:ECSServiceSecurityGroup"
+          Subnets:
+          - Fn::ImportValue: !Sub '${EnvironmentName}:PrivateSubnet1'
+          - Fn::ImportValue: !Sub '${EnvironmentName}:PrivateSubnet2'
+      TaskDefinition: !Ref GrpcColorClientTaskDefinition
+
+  ### grpc-color-server.default.svc.cluster.local
+  GrpcColorServerServiceDiscoveryRecord:
+    Type: AWS::ServiceDiscovery::Service
+    Properties:
+      Name: 'grpc-color-server'
+      DnsConfig:
+        NamespaceId:
+          'Fn::ImportValue': !Sub "${EnvironmentName}:ECSServiceDiscoveryNamespace"
+        DnsRecords:
+        - Type: A
+          TTL: 300
+      HealthCheckCustomConfig:
+        FailureThreshold: 1
+
+  GrpcColorServerTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      RequiresCompatibilities:
+      - 'FARGATE'
+      Family: 'grpc-color-server'
+      NetworkMode: 'awsvpc'
+      Cpu: 256
+      Memory: 512
+      TaskRoleArn:
+        'Fn::ImportValue': !Sub "${EnvironmentName}:TaskIamRoleArn"
+      ExecutionRoleArn:
+        'Fn::ImportValue': !Sub "${EnvironmentName}:TaskExecutionIamRoleArn"
+      ProxyConfiguration:
+        Type: 'APPMESH'
+        ContainerName: 'envoy'
+        ProxyConfigurationProperties:
+        - Name: 'IgnoredUID'
+          Value: '1337'
+        - Name: 'ProxyIngressPort'
+          Value: '15000'
+        - Name: 'ProxyEgressPort'
+          Value: '15001'
+        - Name: 'AppPorts'
+          Value: '9080'
+        - Name: 'EgressIgnoredIPs'
+          Value: '169.254.170.2,169.254.169.254'
+      ContainerDefinitions:
+      - Name: 'app'
+        Image: !Ref GrpcColorServerImage
+        Essential: true
+        DependsOn:
+          - ContainerName: 'envoy'
+            Condition: 'HEALTHY'
+        LogConfiguration:
+          LogDriver: 'awslogs'
+          Options:
+            awslogs-group:
+                Fn::ImportValue: !Sub "${EnvironmentName}:ECSServiceLogGroup"
+            awslogs-region: !Ref AWS::Region
+            awslogs-stream-prefix: 'grpc-color-server'
+        PortMappings:
+        - ContainerPort: 9080
+          Protocol: 'tcp'
+        Environment:
+        - Name: 'PORT'
+          Value: '9080'
+        - Name: 'COLOR'
+          Value: !Sub 'no color!'
+      - Name: envoy
+        Image: !Ref EnvoyImage
+        Essential: true
+        User: '1337'
+        Ulimits:
+        - Name: "nofile"
+          HardLimit: 15000
+          SoftLimit: 15000
+        PortMappings:
+        - ContainerPort: 9901
+          Protocol: 'tcp'
+        - ContainerPort: 15000
+          Protocol: 'tcp'
+        - ContainerPort: 15001
+          Protocol: 'tcp'
+        HealthCheck:
+          Command:
+          - 'CMD-SHELL'
+          - 'curl -s http://localhost:9901/server_info | grep state | grep -q LIVE'
+          Interval: 5
+          Timeout: 2
+          Retries: 3
+        LogConfiguration:
+          LogDriver: 'awslogs'
+          Options:
+            awslogs-group:
+                Fn::ImportValue: !Sub "${EnvironmentName}:ECSServiceLogGroup"
+            awslogs-region: !Ref AWS::Region
+            awslogs-stream-prefix: 'grpc-color-server-envoy'
+        Environment:
+        - Name: 'APPMESH_VIRTUAL_NODE_NAME'
+          Value: !Sub 'mesh/${AppMeshMeshName}/virtualNode/grpc-color-server-vn'
+        - Name: 'APPMESH_XDS_ENDPOINT'
+          Value: !Sub '${AppMeshXdsEndpoint}'
+        - Name: 'ENVOY_LOG_LEVEL'
+          Value: 'debug'
+
+  GrpcColorServerService:
+    Type: AWS::ECS::Service
+    Properties:
+      Cluster:
+        'Fn::ImportValue': !Sub "${EnvironmentName}:ECSCluster"
+      DeploymentConfiguration:
+        MaximumPercent: 200
+        MinimumHealthyPercent: 100
+      DesiredCount: 1
+      LaunchType: 'FARGATE'
+      ServiceRegistries:
+      - RegistryArn: !GetAtt 'GrpcColorServerServiceDiscoveryRecord.Arn'
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: DISABLED
+          SecurityGroups:
+          - 'Fn::ImportValue': !Sub "${EnvironmentName}:ECSServiceSecurityGroup"
+          Subnets:
+          - Fn::ImportValue: !Sub '${EnvironmentName}:PrivateSubnet1'
+          - Fn::ImportValue: !Sub '${EnvironmentName}:PrivateSubnet2'
+      TaskDefinition: !Ref GrpcColorServerTaskDefinition
+
+  ### grpc-color-gateway.default.svc.cluster.local
+  GrpcColorGatewayServiceDiscoveryRecord:
+    Type: 'AWS::ServiceDiscovery::Service'
+    Properties:
+      Name: "grpc-color-gateway"
+      DnsConfig:
+        NamespaceId:
+          'Fn::ImportValue': !Sub "${EnvironmentName}:ECSServiceDiscoveryNamespace"
+        DnsRecords:
+          - Type: A
+            TTL: 300
+      HealthCheckCustomConfig:
+        FailureThreshold: 1
+
+  GrpcColorGatewayTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      RequiresCompatibilities:
+        - 'FARGATE'
+      Family: 'grpc-color-gateway'
+      NetworkMode: 'awsvpc'
+      Cpu: 256
+      Memory: 512
+      TaskRoleArn:
+        'Fn::ImportValue': !Sub "${EnvironmentName}:TaskIamRoleArn"
+      ExecutionRoleArn:
+        'Fn::ImportValue': !Sub "${EnvironmentName}:TaskExecutionIamRoleArn"
+      ContainerDefinitions:
+        - Name: 'app'
+          Image: !Ref EnvoyImage
+          Essential: true
+          User: '1337'
+          Ulimits:
+            - Name: "nofile"
+              HardLimit: 15000
+              SoftLimit: 15000
+          PortMappings:
+            - ContainerPort: 9901
+              Protocol: 'tcp'
+            - ContainerPort: 9080
+              Protocol: 'tcp'
+          HealthCheck:
+            Command:
+              - 'CMD-SHELL'
+              - 'curl -s http://localhost:9901/server_info | grep state | grep -q LIVE'
+            Interval: 5
+            Timeout: 2
+            Retries: 3
+          LogConfiguration:
+            LogDriver: 'awslogs'
+            Options:
+              awslogs-group:
+                Fn::ImportValue: !Sub "${EnvironmentName}:ECSServiceLogGroup"
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: 'grpc-color-gateway-envoy'
+          Environment:
+            - Name: 'APPMESH_VIRTUAL_NODE_NAME'
+              Value: !Sub 'mesh/${AppMeshMeshName}/virtualGateway/grpc-color-gateway-vg'
+            - Name: 'APPMESH_XDS_ENDPOINT'
+              Value: !Sub '${AppMeshXdsEndpoint}'
+
+  GrpcColorGatewayService:
+    Type: 'AWS::ECS::Service'
+    Properties:
+      Cluster:
+        'Fn::ImportValue': !Sub "${EnvironmentName}:ECSCluster"
+      DeploymentConfiguration:
+        MaximumPercent: 200
+        MinimumHealthyPercent: 100
+      DesiredCount: 1
+      LaunchType: FARGATE
+      ServiceRegistries:
+        - RegistryArn:
+            'Fn::GetAtt': GrpcColorGatewayServiceDiscoveryRecord.Arn
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: DISABLED
+          SecurityGroups:
+            - 'Fn::ImportValue': !Sub "${EnvironmentName}:ECSServiceSecurityGroup"
+          Subnets:
+            - 'Fn::ImportValue': !Sub "${EnvironmentName}:PrivateSubnet1"
+            - 'Fn::ImportValue': !Sub "${EnvironmentName}:PrivateSubnet2"
+      TaskDefinition: { Ref: GrpcColorGatewayTaskDefinition }

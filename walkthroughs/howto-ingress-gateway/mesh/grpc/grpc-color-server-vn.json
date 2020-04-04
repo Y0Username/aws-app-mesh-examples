@@ -1,0 +1,25 @@
+{
+    "spec": {
+        "listeners": [
+            {
+                "healthCheck": {
+                    "healthyThreshold": 2,
+                    "intervalMillis": 5000,
+                    "port": 9080,
+                    "protocol": "grpc",
+                    "timeoutMillis": 2000,
+                    "unhealthyThreshold": 3
+                },
+                "portMapping": {
+                    "port": 9080,
+                    "protocol": "grpc"
+                }
+            }
+        ],
+        "serviceDiscovery": {
+            "dns": {
+                "hostname": $DNS_HOSTNAME
+            }
+        }
+    }
+}

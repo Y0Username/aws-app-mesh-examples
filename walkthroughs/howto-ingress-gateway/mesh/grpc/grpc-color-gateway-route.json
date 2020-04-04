@@ -1,0 +1,16 @@
+{
+    "spec": {
+        "grpcRoute" : {
+            "match" : {
+                "serviceName" : "color.ColorService"
+            },
+            "action" : {
+                "target" : {
+                    "virtualService": {
+                        "virtualServiceName": $VIRTUALSERVICE_NAME
+                    }
+                }
+            }
+        }
+    }
+}
