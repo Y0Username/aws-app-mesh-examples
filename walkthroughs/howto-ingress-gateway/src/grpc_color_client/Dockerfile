@@ -3,7 +3,7 @@ FROM golang:1 AS builder
 # Use the default go proxy
 ARG GO_PROXY=https://proxy.golang.org
 
-WORKDIR /go/src/github.com/aws/aws-app-mesh-examples/walkthroughs/howto-grpc/color_client
+WORKDIR /go/src/github.com/aws/aws-app-mesh-examples/walkthroughs/howto-ingress-gateway/color_client
 
 # Set the proxies for the go compiler.
 ENV GOPROXY=$GO_PROXY

@@ -22,8 +22,7 @@ sanity_check() {
     fi
 }
 
-# appmesh_cmd="aws appmesh-preview"
-appmesh_cmd="aws appmesh --endpoint-url ${APPMESH_FRONTEND}"
+appmesh_cmd="aws appmesh-preview"
 
 create_mesh() {
     spec_file=$1
@@ -47,10 +46,13 @@ delete_mesh() {
 create_vgateway() {
     spec_file=$1
     vgateway_name=$2
+    cli_input=$( jq -n \
+    --arg CERTIFICATE_ARN "${CERTIFICATE_ARN}" \
+    -f "$spec_file" )
     cmd=( $appmesh_cmd create-virtual-gateway \
                 --mesh-name "${MESH_NAME}" \
                 --virtual-gateway-name "${vgateway_name}" \
-                --cli-input-json "file:///${spec_file}" \
+                --cli-input-json "$cli_input" \
                 --query virtualGateway.metadata.uid --output text )
     print "${cmd[@]}"
     uid=$("${cmd[@]}") || err "Unable to create virtual gateway" "$?"
@@ -72,7 +74,6 @@ create_gateway_route() {
     spec_file=$1
     vgateway_name=$2
     gatewayroute_name=$3
-    # virtualservice_name=$4
     cli_input=$( jq -n \
         --arg VIRTUALSERVICE_NAME "$4" \
         -f "$spec_file" )

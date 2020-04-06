@@ -15,7 +15,8 @@ aws --region "${AWS_DEFAULT_REGION}" \
     AppMeshMeshName="${MESH_NAME}" \
     EnvoyImage="${ENVOY_IMAGE}" \
     ColorTellerImageName="${COLOR_TELLER_IMAGE_NAME}" \
-    AppMeshXdsEndpoint="${APPMESH_XDS_ENDPOINT}"
+    AppMeshXdsEndpoint="${APPMESH_XDS_ENDPOINT}" \
+    LoadBalancerCertificateArn="${CERTIFICATE_ARN}"
 
 print_bastion() {
     echo "Bastion endpoint:"

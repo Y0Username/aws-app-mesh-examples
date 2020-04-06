@@ -4,6 +4,14 @@
 			"portMapping": {
 				"port": 9080,
 				"protocol": "http"
+			},
+			"tls": {
+				"mode": "STRICT",
+				"certificate": {
+					"acm": {
+						"certificateArn": $CERTIFICATE_ARN
+					}
+				}
 			}
 		}],
 		"backendDefaults": {
