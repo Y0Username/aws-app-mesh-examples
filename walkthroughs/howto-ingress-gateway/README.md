@@ -17,12 +17,7 @@ In App Mesh, VirtualGateway and GatewayRoutes are the front door to the Mesh and
 					"protocol": "http"
 				},
 				"tls": {
-		          	// Mode determines whether or not TLS is negotiated on this Virtual Node.
-		          	// STRICT - TLS is required.
-		          	// PERMISSIVE - TLS is optional (plain-text allowed).
-		          	// DISABLED - TLS is disabled (plain-text only).
 					"mode": "STRICT",
-					// Use a certificate from ACM.
 					"certificate": {
 						"acm": {
 							"certificateArn": $CERTIFICATE_ARN
@@ -30,19 +25,11 @@ In App Mesh, VirtualGateway and GatewayRoutes are the front door to the Mesh and
 					}
 				}
 			}],
-			// BackendDefaults settings are applied to all backends.
 			"backendDefaults": {
-			    // ClientPolicy is a policy for how to handle traffic with backends (i.e. from the client perspective)
 				"clientPolicy": {
-					// TLS determines whether or not TLS is negotiated, and how.
 					"tls": {
-						// Validation determines how to validate a certificate offered by a backend.
 						"validation": {
-							// Trust is the trust bundle (i.e. set of root certificate authorities) used to validate
-	              	        // the certificate offered by a backend. Certificates signed by one of these certificate
-	              	        // authorities are considered valid.
 							"trust": {
-								// Use a certificate authority from ACM
 								"acm": {
 									"certificateAuthorityArns": [
 										$ROOT_CA_ARN
@@ -56,20 +43,28 @@ In App Mesh, VirtualGateway and GatewayRoutes are the front door to the Mesh and
 		}
 	}
 	```
+	Here, Mode determines whether or not TLS is negotiated on this Virtual Node:
+	- STRICT- TLS is required.
+	- PERMISSIVE- TLS is optional (plain-text allowed).
+	- DISABLED- TLS is disabled (plain-text only).
+
+	BackendDefaults settings are applied to all backends with ClientPolicy being policy for how to handle traffic with backends (i.e. from the client perspective).
+	
+	- TLS determines whether or not TLS is negotiated, and how.
+	- Validation determines how to validate a certificate offered by a backend.
+	- Trust is the trust bundle (i.e. set of root certificate authorities) used to validate the certificate offered by a backend. Certificates signed by one of these certificate authorities are considered valid.
+
 - **GatewayRoute:** This is where customers will specify routing configuration for backend VirtualServices. VirtualGateway supports HTTP, HTTP2 and GRPC GatewayRoutes. For each type of GatewayRoute customers can specify a match condition (prefix for HTTP/HTTP2 and service name for GRPC) and a target Virtual Service name. A sample spec for the GatewayRoute is as follows:
 
 	```json
 	{
     "spec": {
-    	 // Specify Http|Http2|Grpc gateway route configurations
         "httpRoute" : {
             "match" : {
-            		// Match Prefix for route to VirtualService
                 "prefix" : "/color1"
             },
             "action" : {
                 "target" : {
-                // Target VirtualService to route the request to
                     "virtualService": {
                         "virtualServiceName": $VIRTUALSERVICE_NAME
                     }
